@@ -7,11 +7,46 @@ interface ChatViewProps {
   documents: any[];
 }
 
+// Audio Helpers for raw PCM playback as per GenAI guidelines
+function decodeBase64(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function playRawPcm(base64Data: string) {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    const data = decodeBase64(base64Data.split(',')[1] || base64Data);
+    const dataInt16 = new Int16Array(data.buffer);
+    const frameCount = dataInt16.length;
+    const buffer = audioContext.createBuffer(1, frameCount, 24000);
+    const channelData = buffer.getChannelData(0);
+    
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i] / 32768.0;
+    }
+    
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start();
+  } catch (error) {
+    console.error("Audio playback failed", error);
+  }
+}
+
 const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -19,21 +54,22 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
     }
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleSend = async (overrideInput?: string) => {
+    const textToSend = overrideInput || input;
+    if (!textToSend.trim() || isLoading) return;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: textToSend,
     };
 
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    if (!overrideInput) setInput('');
     setIsLoading(true);
 
     try {
-      const result = await aiService.chatWithRAG(input, documents);
+      const result = await aiService.chatWithRAG(textToSend, documents);
       
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -55,6 +91,43 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
     }
   };
 
+  const handleListen = async (msgId: string, text: string) => {
+    if (isSpeaking === msgId) return;
+    setIsSpeaking(msgId);
+    try {
+      const audioDataUri = await aiService.textToSpeech(text);
+      await playRawPcm(audioDataUri);
+    } catch (error) {
+      console.error("Speech synthesis failed", error);
+    } finally {
+      setIsSpeaking(null);
+    }
+  };
+
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1];
+        const transcription = await aiService.transcribeAudio(base64);
+        if (transcription) {
+          handleSend(transcription);
+        }
+      } catch (error) {
+        console.error("Transcription failed", error);
+        alert("Failed to transcribe audio. Please ensure the file format is supported.");
+      } finally {
+        setIsLoading(false);
+        if (audioInputRef.current) audioInputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen bg-white">
       {/* Header */}
@@ -66,7 +139,7 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
         <div className="flex gap-2">
           <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full shrink-0">
             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span className="text-[9px] md:text-[11px] font-bold text-slate-600 uppercase tracking-tight">Active</span>
+            <span className="text-[9px] md:text-[11px] font-bold text-slate-600 uppercase tracking-tight">Sovereign Node Active</span>
           </div>
         </div>
       </div>
@@ -96,13 +169,23 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
 
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[90%] md:max-w-[85%] rounded-2xl p-3 md:p-4 ${
+            <div className={`max-w-[90%] md:max-w-[85%] rounded-2xl p-3 md:p-4 relative group ${
               msg.role === 'user' 
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/10' 
                 : 'bg-slate-100 text-slate-800'
             }`}>
               <div className="text-xs md:text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div>
               
+              {msg.role === 'assistant' && (
+                <button 
+                  onClick={() => handleListen(msg.id, msg.content)}
+                  className={`absolute -right-10 top-2 w-8 h-8 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 hover:bg-slate-100 text-slate-400 hover:text-blue-600 ${isSpeaking === msg.id ? 'opacity-100 text-blue-600 animate-pulse' : ''}`}
+                  title="Listen to response"
+                >
+                  <i className={`fa-solid ${isSpeaking === msg.id ? 'fa-waveform' : 'fa-volume-high'} text-xs`}></i>
+                </button>
+              )}
+
               {msg.citations && msg.citations.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-200/50 space-y-2">
                   <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Sources</p>
@@ -134,21 +217,34 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
       {/* Input */}
       <div className="p-3 md:p-4 bg-white border-t border-slate-100">
         <div className="max-w-4xl mx-auto flex items-center gap-2 md:gap-3">
+          <input 
+            type="file" 
+            ref={audioInputRef} 
+            className="hidden" 
+            accept="audio/*" 
+            onChange={handleAudioUpload} 
+          />
+          <button 
+            onClick={() => audioInputRef.current?.click()}
+            disabled={isLoading}
+            className="w-10 h-10 md:w-14 md:h-14 rounded-2xl border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all shrink-0"
+            title="Transcribe Audio"
+          >
+            <i className="fa-solid fa-microphone-lines text-sm md:text-lg"></i>
+          </button>
+          
           <div className="relative flex-1">
             <input 
               type="text" 
-              placeholder="Query files..."
+              placeholder="Query files or upload audio..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 md:px-5 md:py-4 text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
-            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-500">
-              <i className="fa-solid fa-microphone text-xs md:text-sm"></i>
-            </button>
           </div>
           <button 
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={isLoading || !input.trim()}
             className="bg-blue-600 text-white w-10 h-10 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-50 transition-all shrink-0"
           >
@@ -156,7 +252,7 @@ const ChatView: React.FC<ChatViewProps> = ({ documents }) => {
           </button>
         </div>
         <p className="text-[9px] text-center text-slate-400 mt-2 uppercase tracking-tighter">
-          Engine v2.4 • AI Powered • Secured BE-Gov
+          Engine v2.4 • Multi-Modal • Sovereign Infrastructure
         </p>
       </div>
     </div>
