@@ -8,9 +8,17 @@ interface DocsViewProps {
   onDelete: (id: string) => void;
   onBulkDelete: (ids: string[]) => void;
   onToggleProtect: (ids: string[], isProtected: boolean) => void;
+  onTriggerOCR: (ids: string[]) => void;
 }
 
-const DocsView: React.FC<DocsViewProps> = ({ documents, onUpload, onDelete, onBulkDelete, onToggleProtect }) => {
+const DocsView: React.FC<DocsViewProps> = ({ 
+  documents, 
+  onUpload, 
+  onDelete, 
+  onBulkDelete, 
+  onToggleProtect,
+  onTriggerOCR
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -45,6 +53,11 @@ const DocsView: React.FC<DocsViewProps> = ({ documents, onUpload, onDelete, onBu
 
   const handleBulkProtectAction = (isProtected: boolean) => {
     onToggleProtect(Array.from(selectedIds), isProtected);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkOCRAction = () => {
+    onTriggerOCR(Array.from(selectedIds));
     setSelectedIds(new Set());
   };
 
@@ -92,6 +105,13 @@ const DocsView: React.FC<DocsViewProps> = ({ documents, onUpload, onDelete, onBu
             </span>
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+            <button 
+              onClick={handleBulkOCRAction}
+              className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"
+            >
+              <i className="fa-solid fa-wand-magic-sparkles text-blue-400"></i>
+              Trigger OCR
+            </button>
             <button 
               onClick={() => handleBulkProtectAction(true)}
               className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"

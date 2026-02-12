@@ -94,6 +94,25 @@ const App: React.FC = () => {
     }, 3000);
   };
 
+  const handleTriggerOCR = (ids: string[]) => {
+    setDocs(prev => prev.map(d => 
+      ids.includes(d.id) ? { ...d, status: 'processing', ocrStatus: 'pending' } : d
+    ));
+    addAuditLog('MANUAL_OCR_TRIGGER', 'DOCUMENT_BATCH', undefined, { count: ids.length });
+
+    // Simulate OCR finish
+    setTimeout(() => {
+      setDocs(prev => prev.map(d => 
+        ids.includes(d.id) ? { 
+          ...d, 
+          status: 'ready', 
+          ocrStatus: 'completed', 
+          text: `On-demand OCR completed for ${d.title}. Verification audit signature: ${Math.random().toString(36).substring(7).toUpperCase()}` 
+        } : d
+      ));
+    }, 2000);
+  };
+
   const handleDelete = (id: string) => {
     const doc = docs.find(d => d.id === id);
     if (doc?.protected) return;
@@ -167,6 +186,7 @@ ollama run eburon-pro/vision`;
               onDelete={handleDelete}
               onBulkDelete={handleBulkDelete}
               onToggleProtect={handleToggleProtect}
+              onTriggerOCR={handleTriggerOCR}
             />
           )}
           
