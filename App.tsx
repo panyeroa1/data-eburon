@@ -95,22 +95,27 @@ const App: React.FC = () => {
   };
 
   const handleTriggerOCR = (ids: string[]) => {
+    // Stage 1: Mark as pending and processing
     setDocs(prev => prev.map(d => 
       ids.includes(d.id) ? { ...d, status: 'processing', ocrStatus: 'pending' } : d
     ));
-    addAuditLog('MANUAL_OCR_TRIGGER', 'DOCUMENT_BATCH', undefined, { count: ids.length });
+    
+    addAuditLog('MANUAL_OCR_TRIGGER', 'DOCUMENT_BATCH', undefined, { 
+      count: ids.length, 
+      initiatedAt: new Date().toISOString() 
+    });
 
-    // Simulate OCR finish
+    // Stage 2: Simulate completion delay
     setTimeout(() => {
       setDocs(prev => prev.map(d => 
         ids.includes(d.id) ? { 
           ...d, 
           status: 'ready', 
           ocrStatus: 'completed', 
-          text: `On-demand OCR completed for ${d.title}. Verification audit signature: ${Math.random().toString(36).substring(7).toUpperCase()}` 
+          text: `On-demand OCR sequence completed for ${d.title}. Internal audit trace: ${Math.random().toString(36).substring(2, 10).toUpperCase()}. Intelligence node verified: ${serverMode.toUpperCase()}` 
         } : d
       ));
-    }, 2000);
+    }, 2500);
   };
 
   const handleDelete = (id: string) => {

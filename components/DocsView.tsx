@@ -92,7 +92,7 @@ const DocsView: React.FC<DocsViewProps> = ({
 
       {/* Bulk Actions Bar */}
       {selectedIds.size > 0 && (
-        <div className="bg-slate-900 text-white p-3 md:p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="bg-slate-900 text-white p-3 md:p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl animate-in fade-in slide-in-from-top-2 duration-300 border border-slate-700">
           <div className="flex items-center gap-4 w-full md:w-auto">
             <button 
               onClick={() => setSelectedIds(new Set())}
@@ -101,17 +101,18 @@ const DocsView: React.FC<DocsViewProps> = ({
               <i className="fa-solid fa-xmark text-lg"></i>
             </button>
             <span className="font-bold text-sm">
-              {selectedIds.size} objects selected
+              {selectedIds.size} items selected
             </span>
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto justify-end">
             <button 
               onClick={handleBulkOCRAction}
-              className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"
+              className="bg-blue-700 hover:bg-blue-600 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20"
             >
-              <i className="fa-solid fa-wand-magic-sparkles text-blue-400"></i>
+              <i className="fa-solid fa-wand-magic-sparkles"></i>
               Trigger OCR
             </button>
+            <div className="w-px h-6 bg-slate-700 mx-1 hidden md:block"></div>
             <button 
               onClick={() => handleBulkProtectAction(true)}
               className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"
