@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from "../constants";
+import { ChatMessage } from "../types";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
@@ -10,18 +11,28 @@ const DEFAULT_IMAGE_MODEL = 'gemini-3-pro-image-preview';
 const DEFAULT_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 export const aiService = {
-  async chatWithRAG(query: string, contextDocs: any[]) {
+  async chatWithRAG(query: string, contextDocs: any[], history: ChatMessage[] = []) {
     const ai = getAI();
     const model = DEFAULT_REASONING_MODEL;
     
-    // Prepare prompt with context
-    const contextText = contextDocs.map(d => `[ID: ${d.id}, Title: ${d.title}] Text: ${d.text}`).join('\n\n');
+    // Prepare prompt with both document context and persistent chat "reference" data
+    const contextText = contextDocs.map(d => `[TYPE: ${d.sourceType.toUpperCase()}, ID: ${d.id}, Title: ${d.title}] Content: ${d.text}`).join('\n\n');
+    
+    // Include last few messages as part of the knowledge reference
+    const historyText = history.slice(-10).map(m => `${m.role === 'user' ? 'OFFICER' : 'EBURON'}: ${m.content}`).join('\n');
     
     const response = await ai.models.generateContent({
       model,
-      contents: `Context Documents:\n${contextText}\n\nUser Question: ${query}`,
+      contents: `REFERENCE KNOWLEDGE BASE (OFFICIAL UPLOADS & MANUAL INPUTS):
+${contextText}
+
+RECENT ADMINISTRATIVE DIALOGUE (REFERENCE):
+${historyText}
+
+OFFICER CURRENT QUERY:
+${query}`,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION + "\nUse the provided context documents to answer. If the answer is not in the context, say so.",
+        systemInstruction: SYSTEM_INSTRUCTION + "\nCRITICAL: Use all provided reference data (uploads and interaction history) as the primary source of truth. If information exists in previous user inputs or uploads, treat it as validated knowledge.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -48,7 +59,6 @@ export const aiService = {
     try {
       return JSON.parse(response.text || '{}');
     } catch (e) {
-      // Avoid surfacing underlying AI provider names in user-facing logs
       console.error("Infrastructure processing error");
       return { answer: response.text, citations: [] };
     }
@@ -97,7 +107,7 @@ export const aiService = {
     return `data:audio/pcm;base64,${base64Audio}`;
   },
 
-  async transcribeAudio(base64Audio: string) {
+  async transcribeAudio(base64Audio: string, mimeType: string = 'audio/wav') {
     const ai = getAI();
     const model = DEFAULT_REASONING_MODEL;
     
@@ -105,8 +115,8 @@ export const aiService = {
       model,
       contents: {
         parts: [
-          { inlineData: { data: base64Audio, mimeType: 'audio/wav' } },
-          { text: "Transcribe this audio accurately." }
+          { inlineData: { data: base64Audio, mimeType } },
+          { text: "Transcribe this audio accurately for Belgian administrative records. If there are names or NISS numbers, ensure precision." }
         ]
       }
     });

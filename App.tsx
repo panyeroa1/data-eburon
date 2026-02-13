@@ -4,12 +4,13 @@ import Sidebar from './components/Sidebar';
 import DocsView from './components/DocsView';
 import ChatView from './components/ChatView';
 import PurgeView from './components/PurgeView';
-import { Document, AuditLog } from './types';
+import { Document, AuditLog, ChatMessage } from './types';
 import { MOCK_DOCS, CURRENT_WORKSPACE_ID, CURRENT_USER_ID } from './constants';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('docs');
   const [docs, setDocs] = useState<Document[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -20,12 +21,14 @@ const App: React.FC = () => {
     const savedDocs = localStorage.getItem('eburon_docs');
     const savedLogs = localStorage.getItem('eburon_logs');
     const savedServer = localStorage.getItem('eburon_server_mode');
+    const savedMessages = localStorage.getItem('eburon_messages');
     
     if (savedDocs) setDocs(JSON.parse(savedDocs));
     else setDocs(MOCK_DOCS);
 
     if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
     if (savedServer) setServerMode(savedServer as 'cloud' | 'local');
+    if (savedMessages) setMessages(JSON.parse(savedMessages));
     
     setIsLoaded(true);
   }, []);
@@ -48,6 +51,12 @@ const App: React.FC = () => {
       localStorage.setItem('eburon_server_mode', serverMode);
     }
   }, [serverMode, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('eburon_messages', JSON.stringify(messages));
+    }
+  }, [messages, isLoaded]);
 
   const addAuditLog = (action: string, targetType: string, targetId?: string, metadata?: any) => {
     const log: AuditLog = {
@@ -94,8 +103,27 @@ const App: React.FC = () => {
     }, 3000);
   };
 
+  const archiveInteractionAsDoc = (text: string) => {
+    // Automatically turn user inputs into searchable knowledge reference
+    const docId = `interaction-${Date.now()}`;
+    const newDoc: Document = {
+      id: docId,
+      workspaceId: CURRENT_WORKSPACE_ID,
+      title: `Interaction Record ${new Date().toLocaleTimeString()}`,
+      sourceType: 'manual',
+      status: 'ready',
+      ocrStatus: 'not_required',
+      createdAt: new Date().toISOString(),
+      mimeType: 'text/plain',
+      bytes: new Blob([text]).size,
+      text: text,
+      protected: false
+    };
+    setDocs(prev => [newDoc, ...prev]);
+    addAuditLog('AUTO_ARCHIVE_INPUT', 'DOCUMENT', docId, { snippet: text.substring(0, 50) });
+  };
+
   const handleTriggerOCR = (ids: string[]) => {
-    // Stage 1: Mark as pending and processing
     setDocs(prev => prev.map(d => 
       ids.includes(d.id) ? { ...d, status: 'processing', ocrStatus: 'pending' } : d
     ));
@@ -105,7 +133,6 @@ const App: React.FC = () => {
       initiatedAt: new Date().toISOString() 
     });
 
-    // Stage 2: Simulate completion delay
     setTimeout(() => {
       setDocs(prev => prev.map(d => 
         ids.includes(d.id) ? { 
@@ -196,7 +223,12 @@ ollama run eburon-pro/vision`;
           )}
           
           {activeTab === 'chat' && (
-            <ChatView documents={docs.filter(d => d.status === 'ready')} />
+            <ChatView 
+              documents={docs.filter(d => d.status === 'ready')} 
+              messages={messages}
+              setMessages={setMessages}
+              onArchiveInteraction={archiveInteractionAsDoc}
+            />
           )}
           
           {activeTab === 'purge' && (
