@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Document } from '../types';
+import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from '../constants';
 
 interface DocsViewProps {
   documents: Document[];
@@ -22,8 +23,31 @@ const DocsView: React.FC<DocsViewProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  const validateAndUpload = (files: FileList) => {
+    const invalidFiles: string[] = [];
+    const oversizedFiles: string[] = [];
+    
+    Array.from(files).forEach(f => {
+      if (!ALLOWED_MIME_TYPES.includes(f.type)) {
+        invalidFiles.push(f.name);
+      }
+      if (f.size > MAX_FILE_SIZE) {
+        oversizedFiles.push(f.name);
+      }
+    });
+
+    if (invalidFiles.length > 0 || oversizedFiles.length > 0) {
+      let message = "Compliance Warning:\n";
+      if (invalidFiles.length > 0) message += `- Unsupported formats: ${invalidFiles.join(', ')}\n`;
+      if (oversizedFiles.length > 0) message += `- Exceeds 15MB limit: ${oversizedFiles.join(', ')}\n`;
+      alert(message);
+    }
+
+    onUpload(files);
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) onUpload(e.target.files);
+    if (e.target.files) validateAndUpload(e.target.files);
   };
 
   const toggleSelectAll = () => {
@@ -143,7 +167,11 @@ const DocsView: React.FC<DocsViewProps> = ({
       <div 
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) onUpload(e.dataTransfer.files); }}
+        onDrop={(e) => { 
+          e.preventDefault(); 
+          setIsDragging(false); 
+          if (e.dataTransfer.files) validateAndUpload(e.dataTransfer.files); 
+        }}
         className={`border-2 border-dashed rounded-3xl p-6 md:p-12 text-center transition-all duration-300 relative overflow-hidden ${
           isDragging ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'
         }`}
@@ -237,6 +265,7 @@ const DocsView: React.FC<DocsViewProps> = ({
                       <span className={`px-3 py-1 rounded-full text-[9px] md:text-[10px] font-black tracking-widest ${
                         doc.status === 'ready' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 
                         doc.status === 'processing' ? 'bg-blue-100 text-blue-800 animate-pulse border border-blue-200' : 
+                        doc.status === 'error' ? 'bg-red-100 text-red-800 border border-red-200' :
                         'bg-slate-100 text-slate-500 border border-slate-200'
                       }`}>
                         {doc.status.toUpperCase()}

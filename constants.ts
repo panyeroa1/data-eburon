@@ -4,6 +4,20 @@ import { Workspace, Document } from './types';
 export const CURRENT_WORKSPACE_ID = 'ws-begov-alpha-1';
 export const CURRENT_USER_ID = 'officer-7742';
 
+export const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB compliance limit
+export const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'text/plain',
+  'image/jpeg',
+  'image/png',
+  'image/webp'
+];
+
 export const SYSTEM_INSTRUCTION = `
 You are "Eburon BE-Gov Assistant", the specialized AI for Belgian government data paperwork (Federal, Regional, or Community level).
 

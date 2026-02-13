@@ -5,7 +5,7 @@ import DocsView from './components/DocsView';
 import ChatView from './components/ChatView';
 import PurgeView from './components/PurgeView';
 import { Document, AuditLog, ChatMessage } from './types';
-import { MOCK_DOCS, CURRENT_WORKSPACE_ID, CURRENT_USER_ID } from './constants';
+import { MOCK_DOCS, CURRENT_WORKSPACE_ID, CURRENT_USER_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from './constants';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('docs');
@@ -73,38 +73,60 @@ const App: React.FC = () => {
   };
 
   const handleUpload = (files: FileList) => {
-    const newDocs: Document[] = Array.from(files).map((f, i) => ({
-      id: `be-file-${Date.now()}-${i}`,
-      workspaceId: CURRENT_WORKSPACE_ID,
-      title: f.name,
-      sourceType: 'upload',
-      status: 'processing',
-      ocrStatus: 'pending',
-      createdAt: new Date().toISOString(),
-      mimeType: f.type || 'application/octet-stream',
-      bytes: f.size,
-      text: "Infrastructure is scanning and extracting structured content...",
-      protected: false
-    }));
+    const newDocs: Document[] = Array.from(files).map((f, i) => {
+      const isSizeValid = f.size <= MAX_FILE_SIZE;
+      const isTypeValid = ALLOWED_MIME_TYPES.includes(f.type);
+      
+      const status = (!isSizeValid || !isTypeValid) ? 'error' : 'processing';
+      const ocrStatus = status === 'error' ? 'failed' : 'pending';
+
+      return {
+        id: `be-file-${Date.now()}-${i}`,
+        workspaceId: CURRENT_WORKSPACE_ID,
+        title: f.name,
+        sourceType: 'upload',
+        status,
+        ocrStatus,
+        createdAt: new Date().toISOString(),
+        mimeType: f.type || 'application/octet-stream',
+        bytes: f.size,
+        text: status === 'error' 
+          ? `Ingestion rejected: ${!isSizeValid ? 'File exceeds size limit' : 'Unsupported file type'}.` 
+          : "Infrastructure is scanning and extracting structured content...",
+        protected: false
+      };
+    });
 
     setDocs(prev => [...prev, ...newDocs]);
-    addAuditLog('INGEST_INIT', 'GOV_DOC_BATCH', undefined, { count: newDocs.length, filenames: newDocs.map(d => d.title) });
+    
+    const validCount = newDocs.filter(d => d.status !== 'error').length;
+    const errorCount = newDocs.length - validCount;
 
-    // Simulate async processing
+    addAuditLog('INGEST_INIT', 'GOV_DOC_BATCH', undefined, { 
+      total: newDocs.length, 
+      valid: validCount, 
+      errors: errorCount,
+      filenames: newDocs.map(d => d.title) 
+    });
+
+    // Simulate async processing for valid docs
     setTimeout(() => {
-      setDocs(prev => prev.map(d => 
-        newDocs.some(nd => nd.id === d.id) ? { 
-          ...d, 
-          status: 'ready', 
-          ocrStatus: 'completed',
-          text: `Administrative analysis completed for ${d.title}. Intelligence patterns extracted and indexed for retrieval.` 
-        } : d
-      ));
+      setDocs(prev => prev.map(d => {
+        const isNewDoc = newDocs.some(nd => nd.id === d.id);
+        if (isNewDoc && d.status === 'processing') {
+          return { 
+            ...d, 
+            status: 'ready', 
+            ocrStatus: 'completed',
+            text: `Administrative analysis completed for ${d.title}. Intelligence patterns extracted and indexed for retrieval.` 
+          };
+        }
+        return d;
+      }));
     }, 3000);
   };
 
   const archiveInteractionAsDoc = (text: string) => {
-    // Automatically turn user inputs into searchable knowledge reference
     const docId = `interaction-${Date.now()}`;
     const newDoc: Document = {
       id: docId,
