@@ -18,20 +18,36 @@ export const ALLOWED_MIME_TYPES = [
   'image/webp'
 ];
 
+export const BE_GOV_WEBSITES = [
+  { title: "Belgium.be (Federal Portal)", url: "https://www.belgium.be" },
+  { title: "Vlaanderen.be (Flanders)", url: "https://www.vlaanderen.be" },
+  { title: "Wallonie.be (Wallonia)", url: "https://www.wallonie.be" },
+  { title: "Ostbelgien.be (German Community)", url: "https://www.ostbelgien.be" },
+  { title: "Brussels.be (Brussels-Capital)", url: "https://www.brussels.be" },
+  { title: "FPS BOSA (Digital Transformation)", url: "https://bosa.belgium.be" },
+  { title: "FPS Finance", url: "https://finances.belgium.be" },
+  { title: "FPS Justice", url: "https://justice.belgium.be" },
+  { title: "GBA/APD (Data Protection)", url: "https://www.dataprotectionauthority.be" },
+  { title: "NBB (National Bank)", url: "https://www.nbb.be" }
+];
+
 export const SYSTEM_INSTRUCTION = `
-You are "Eburon BE-Gov Assistant", the specialized AI for Belgian government data paperwork (Federal, Regional, or Community level).
+You are "Eburon BE-Gov Assistant", the specialized AI for Belgian government data paperwork, operating within the 2025-2026 administrative cycle.
 
 PRIMARY GOAL:
-Assist Belgian public officers in managing sensitive administrative documents (PDF, scans, forms). Provide OCR, RAG-based retrieval, and data lifecycle assistance in accordance with EU GDPR (RGPD/AVG) and Belgian administrative laws.
+Assist Belgian public officers in managing sensitive administrative documents and web-based government resources. Provide OCR, RAG-based retrieval, and data lifecycle assistance.
+
+VOICE OUTPUT:
+When asked to speak or provide audio, you MUST use Dutch with a clear Flemish (Vlaams) nuance. Your tone should be professional, polite, and typical of a Belgian civil servant.
+
+TEMPORAL CONTEXT:
+The current administrative year is 2025. All references to reports, budgets, and compliance frameworks should prioritize the 2025-2026 period. Treat information from 2023 or earlier as historical/outdated unless specifically requested.
 
 DATA SENSITIVITY:
-1. PII Redaction: Be alert for National Registry Numbers (NISS/RR) and other sensitive Belgian PII.
-2. Language: Support administrative English, but recognize French (FR), Dutch (NL), and German (DE) context as used in Belgian public service.
-3. Citations: All answers must cite specific administrative documents or articles.
-4. Purge Rules: Always reference GDPR Article 17 "Right to Erasure" when discussing data deletion.
-
-RESPONSE STYLE:
-Professional, neutral, and compliant. Use internal names "Eburon BE-OCR" and "Eburon RAG-Gov".
+1. PII Redaction: Be alert for National Registry Numbers (NISS/RR).
+2. Language: Support administrative English, French (FR), Dutch (NL), and German (DE).
+3. Citations: All answers must cite specific administrative documents or URLs.
+4. Purge Rules: Always reference GDPR Article 17 "Right to Erasure" and current 2025-2026 retention royal decrees.
 `;
 
 export const MOCK_WORKSPACE: Workspace = {
@@ -44,25 +60,13 @@ export const MOCK_DOCS: Document[] = [
   {
     id: 'doc-be-001',
     workspaceId: CURRENT_WORKSPACE_ID,
-    title: 'RGPD_Compliance_Protocol_2024.pdf',
+    title: 'RGPD_Compliance_Protocol_2025_Final.pdf',
     sourceType: 'upload',
     status: 'ready',
     ocrStatus: 'completed',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString(),
+    createdAt: new Date().toISOString(),
     mimeType: 'application/pdf',
     bytes: 2048567,
-    text: 'Standard protocol for data retention in Belgian federal institutions. Retention for person-related records is limited to 10 years after file closure unless specified by royal decree.'
-  },
-  {
-    id: 'doc-be-002',
-    workspaceId: CURRENT_WORKSPACE_ID,
-    title: 'Archive_Municipal_Bruxelles.docx',
-    sourceType: 'upload',
-    status: 'ready',
-    ocrStatus: 'not_required',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 65).toISOString(),
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    bytes: 856000,
-    text: 'Administrative summary of urban development grants. All documents must be accessible to the Data Protection Authority (APD/GBA) upon request.'
+    text: 'Updated standard protocol for data retention in Belgian federal institutions for the 2025-2026 cycle. Retention for person-related records is strictly audited against the 2025 Digital Services Act alignment.'
   }
 ];

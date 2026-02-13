@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, Citation } from '../types';
 import { aiService } from '../services/aiService';
+import { BE_GOV_WEBSITES } from '../constants';
 
 interface ChatViewProps {
   documents: any[];
@@ -55,6 +56,13 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const SAMPLE_PROMPTS = [
+    "What is the federal budget allocation for Digital Transformation in 2026?",
+    "Summarize the 2025 GDPR audit findings for FPS BOSA.",
+    "What are the new circular economy regulations for public procurement in 2025?",
+    "Identify high-risk data retention periods in the 2026 framework.",
+  ];
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -73,7 +81,6 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
 
     setMessages(prev => [...prev, userMsg]);
     
-    // Save this input as reference data (Interaction Record)
     if (onArchiveInteraction) {
       onArchiveInteraction(textToSend);
     }
@@ -82,7 +89,6 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
     setIsLoading(true);
 
     try {
-      // Use messages history as part of the reference data for RAG
       const result = await aiService.chatWithRAG(textToSend, documents, messages);
       
       const assistantMsg: ChatMessage = {
@@ -200,10 +206,10 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
             <h2 className="font-bold text-slate-800 text-sm md:text-base tracking-tight uppercase">Eburon Interaction Node</h2>
             <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-emerald-100">
                <i className="fa-solid fa-database"></i>
-               PERSISTENT
+               2025-2026 ACTIVE
             </div>
           </div>
-          <p className="text-[10px] md:text-xs text-slate-500 font-medium">Indexing all inputs to Sovereign Knowledge Base</p>
+          <p className="text-[10px] md:text-xs text-slate-500 font-medium">Sovereign Knowledge Retrieval & Archiving</p>
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1 rounded-full shrink-0 border border-blue-100">
@@ -216,22 +222,50 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 scroll-smooth bg-slate-50/30">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto px-4">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-blue-100 rounded-3xl flex items-center justify-center mb-6 shadow-inner ring-8 ring-blue-50">
+          <div className="h-full flex flex-col items-center justify-start text-center max-w-4xl mx-auto px-4 pt-10 pb-20 overflow-y-auto scrollbar-hide">
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-blue-100 rounded-3xl flex items-center justify-center mb-6 shadow-inner ring-8 ring-blue-50 mx-auto">
               <i className="fa-solid fa-shield-halved text-blue-600 text-2xl md:text-3xl"></i>
             </div>
-            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Active Intelligence</h3>
-            <p className="text-slate-500 text-xs md:text-sm font-medium">Query ingested data or submit voice prompts. All dialogue is automatically archived as reference metadata for future retrieval.</p>
-            <div className="mt-6 md:mt-8 grid grid-cols-1 gap-2 md:gap-3 w-full">
-              {['What is the retention policy?', 'Summarize 2023 reports', 'Identify liability clauses'].map(q => (
-                <button 
-                  key={q} 
-                  onClick={() => setInput(q)}
-                  className="text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50 text-xs md:text-sm text-slate-600 font-bold transition-all shadow-sm"
-                >
-                  {q}
-                </button>
-              ))}
+            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Active Intelligence 2025</h3>
+            <p className="text-slate-500 text-xs md:text-sm font-medium mb-10">Query ingested 2025-2026 data or official web nodes. All dialogue is persisted for the current administrative cycle.</p>
+            
+            <div className="grid md:grid-cols-2 gap-8 w-full">
+              {/* Sample Prompts */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left pl-2">Governance Queries</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {SAMPLE_PROMPTS.map(q => (
+                    <button 
+                      key={q} 
+                      onClick={() => setInput(q)}
+                      className="text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50 text-xs md:text-sm text-slate-600 font-bold transition-all shadow-sm flex items-center gap-3 group"
+                    >
+                      <i className="fa-solid fa-comment-dots text-blue-300 group-hover:text-blue-500"></i>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Institutional Resources */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left pl-2">Institutional Web Nodes</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {BE_GOV_WEBSITES.map(site => (
+                    <button 
+                      key={site.url} 
+                      onClick={() => setInput(`Tell me about the recent updates or administrative purpose of ${site.title} for the 2025-2026 cycle.`)}
+                      className="text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-emerald-400 hover:bg-emerald-50 text-xs md:text-sm text-slate-600 font-bold transition-all shadow-sm flex items-center gap-3 group"
+                    >
+                      <i className="fa-solid fa-building-columns text-emerald-300 group-hover:text-emerald-500"></i>
+                      <div className="min-w-0">
+                        <p className="truncate">{site.title}</p>
+                        <p className="text-[8px] text-slate-400 truncate uppercase tracking-tighter">{site.url}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -249,7 +283,7 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
                 <button 
                   onClick={() => handleListen(msg.id, msg.content)}
                   className={`absolute -right-10 top-2 w-8 h-8 rounded-xl flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:shadow-md ${isSpeaking === msg.id ? 'opacity-100 text-blue-600 animate-pulse' : ''}`}
-                  title="Listen to response"
+                  title="Listen (Vlaamse nuance)"
                 >
                   <i className={`fa-solid ${isSpeaking === msg.id ? 'fa-waveform' : 'fa-volume-high'} text-xs`}></i>
                 </button>
@@ -362,7 +396,7 @@ const ChatView: React.FC<ChatViewProps> = ({ documents, messages, setMessages, o
         <div className="flex justify-center items-center gap-4 mt-3">
            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-2">
             <i className="fa-solid fa-fingerprint text-[8px]"></i>
-            Sovereign Engine v2.4 • Dialogue persisted as manual reference
+            Sovereign Engine v2.5 (2025 Cycle) • Dialogue persisted
           </p>
         </div>
       </div>

@@ -5,7 +5,8 @@ import DocsView from './components/DocsView';
 import ChatView from './components/ChatView';
 import PurgeView from './components/PurgeView';
 import { Document, AuditLog, ChatMessage } from './types';
-import { MOCK_DOCS, CURRENT_WORKSPACE_ID, CURRENT_USER_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from './constants';
+import { MOCK_DOCS, BE_GOV_WEBSITES, CURRENT_WORKSPACE_ID, CURRENT_USER_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from './constants';
+import { aiService } from './services/aiService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('docs');
@@ -16,15 +17,36 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [serverMode, setServerMode] = useState<'cloud' | 'local'>('cloud');
 
-  // Persistence Layer: Load from Local Storage on mount
   useEffect(() => {
     const savedDocs = localStorage.getItem('eburon_docs');
     const savedLogs = localStorage.getItem('eburon_logs');
     const savedServer = localStorage.getItem('eburon_server_mode');
     const savedMessages = localStorage.getItem('eburon_messages');
     
-    if (savedDocs) setDocs(JSON.parse(savedDocs));
-    else setDocs(MOCK_DOCS);
+    if (savedDocs) {
+      setDocs(JSON.parse(savedDocs));
+    } else {
+      // Initialize with Mock Docs + Showcase Websites for 2025-2026
+      const showcaseDocs: Document[] = BE_GOV_WEBSITES.map((site, i) => ({
+        id: `showcase-be-${i}`,
+        workspaceId: CURRENT_WORKSPACE_ID,
+        title: site.title,
+        sourceType: 'url',
+        status: 'ready',
+        ocrStatus: 'not_required',
+        createdAt: new Date().toISOString(),
+        mimeType: 'text/html',
+        bytes: 0,
+        text: `Official Belgian Governance portal (2025-2026 Active Node): ${site.url}. This node is pre-indexed for institutional RAG capabilities.`,
+        protected: true,
+        extractedData: {
+          documentType: "GOVERNMENT_PORTAL",
+          entity: site.title,
+          summary: "Indexed institutional web gateway for 2025-2026 Belgian administration."
+        }
+      }));
+      setDocs([...MOCK_DOCS, ...showcaseDocs]);
+    }
 
     if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
     if (savedServer) setServerMode(savedServer as 'cloud' | 'local');
@@ -33,29 +55,20 @@ const App: React.FC = () => {
     setIsLoaded(true);
   }, []);
 
-  // Persistence Layer: Save to Local Storage on change
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('eburon_docs', JSON.stringify(docs));
-    }
+    if (isLoaded) localStorage.setItem('eburon_docs', JSON.stringify(docs));
   }, [docs, isLoaded]);
 
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('eburon_logs', JSON.stringify(auditLogs));
-    }
+    if (isLoaded) localStorage.setItem('eburon_logs', JSON.stringify(auditLogs));
   }, [auditLogs, isLoaded]);
 
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('eburon_server_mode', serverMode);
-    }
+    if (isLoaded) localStorage.setItem('eburon_server_mode', serverMode);
   }, [serverMode, isLoaded]);
 
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('eburon_messages', JSON.stringify(messages));
-    }
+    if (isLoaded) localStorage.setItem('eburon_messages', JSON.stringify(messages));
   }, [messages, isLoaded]);
 
   const addAuditLog = (action: string, targetType: string, targetId?: string, metadata?: any) => {
@@ -66,64 +79,123 @@ const App: React.FC = () => {
       action,
       targetType,
       targetId,
-      metadata: { ...metadata, compliance: 'GDPR_V2_AUDIT', server: serverMode },
+      metadata: { ...metadata, compliance: 'GDPR_2025_AUDIT', server: serverMode },
       createdAt: new Date().toISOString()
     };
     setAuditLogs(prev => [log, ...prev]);
   };
 
-  const handleUpload = (files: FileList) => {
-    const newDocs: Document[] = Array.from(files).map((f, i) => {
+  const handleUpload = async (files: FileList) => {
+    const fileArray = Array.from(files);
+    const newDocs: Document[] = fileArray.map((f, i) => {
       const isSizeValid = f.size <= MAX_FILE_SIZE;
       const isTypeValid = ALLOWED_MIME_TYPES.includes(f.type);
-      
       const status = (!isSizeValid || !isTypeValid) ? 'error' : 'processing';
-      const ocrStatus = status === 'error' ? 'failed' : 'pending';
-
       return {
         id: `be-file-${Date.now()}-${i}`,
         workspaceId: CURRENT_WORKSPACE_ID,
         title: f.name,
         sourceType: 'upload',
         status,
-        ocrStatus,
+        ocrStatus: status === 'error' ? 'failed' : 'pending',
         createdAt: new Date().toISOString(),
         mimeType: f.type || 'application/octet-stream',
         bytes: f.size,
-        text: status === 'error' 
-          ? `Ingestion rejected: ${!isSizeValid ? 'File exceeds size limit' : 'Unsupported file type'}.` 
-          : "Infrastructure is scanning and extracting structured content...",
+        text: status === 'error' ? "Rejected: Compliance failure." : "Scanning for 2025 patterns...",
         protected: false
       };
     });
 
-    setDocs(prev => [...prev, ...newDocs]);
-    
-    const validCount = newDocs.filter(d => d.status !== 'error').length;
-    const errorCount = newDocs.length - validCount;
+    setDocs(prev => [...newDocs, ...prev]);
+    addAuditLog('INGEST_INIT', 'DOC_BATCH', undefined, { count: newDocs.length });
 
-    addAuditLog('INGEST_INIT', 'GOV_DOC_BATCH', undefined, { 
-      total: newDocs.length, 
-      valid: validCount, 
-      errors: errorCount,
-      filenames: newDocs.map(d => d.title) 
-    });
-
-    // Simulate async processing for valid docs
-    setTimeout(() => {
-      setDocs(prev => prev.map(d => {
-        const isNewDoc = newDocs.some(nd => nd.id === d.id);
-        if (isNewDoc && d.status === 'processing') {
-          return { 
-            ...d, 
-            status: 'ready', 
-            ocrStatus: 'completed',
-            text: `Administrative analysis completed for ${d.title}. Intelligence patterns extracted and indexed for retrieval.` 
-          };
+    newDocs.forEach(async (doc, idx) => {
+      if (doc.status !== 'processing') return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        try {
+          const res = await aiService.performOCR(base64, fileArray[idx].type);
+          setDocs(prev => prev.map(d => d.id === doc.id ? { 
+            ...d, status: 'ready', ocrStatus: 'completed', text: res.fullText, extractedData: res 
+          } : d));
+          addAuditLog('OCR_SUCCESS', 'DOCUMENT', doc.id);
+        } catch (e) {
+          setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'error' } : d));
         }
-        return d;
-      }));
-    }, 3000);
+      };
+      reader.readAsDataURL(fileArray[idx]);
+    });
+  };
+
+  const handleCameraCapture = async (base64: string) => {
+    const docId = `capture-${Date.now()}`;
+    const newDoc: Document = {
+      id: docId,
+      workspaceId: CURRENT_WORKSPACE_ID,
+      title: `Camera Scan ${new Date().toLocaleTimeString()}`,
+      sourceType: 'manual',
+      status: 'processing',
+      ocrStatus: 'pending',
+      createdAt: new Date().toISOString(),
+      mimeType: 'image/jpeg',
+      bytes: base64.length * 0.75, // Estimate
+      text: "Sovereign OCR in progress...",
+      protected: false
+    };
+
+    setDocs(prev => [newDoc, ...prev]);
+    addAuditLog('CAMERA_SCAN_START', 'DOCUMENT', docId);
+
+    try {
+      const res = await aiService.performOCR(base64, 'image/jpeg');
+      setDocs(prev => prev.map(d => d.id === docId ? { 
+        ...d, status: 'ready', ocrStatus: 'completed', text: res.fullText, extractedData: res 
+      } : d));
+      addAuditLog('OCR_SUCCESS', 'CAMERA_DOCUMENT', docId);
+      // Automatically switch to chat if it was a camera capture for immediate questioning
+      setActiveTab('chat');
+    } catch (e) {
+      setDocs(prev => prev.map(d => d.id === docId ? { ...d, status: 'error' } : d));
+    }
+  };
+
+  const handleUrlIngest = async (url: string) => {
+    const docId = `web-${Date.now()}`;
+    const placeholder: Document = {
+      id: docId,
+      workspaceId: CURRENT_WORKSPACE_ID,
+      title: "Fetching 2025 Sovereign Content...",
+      sourceType: 'url',
+      status: 'processing',
+      ocrStatus: 'not_required',
+      createdAt: new Date().toISOString(),
+      mimeType: 'text/html',
+      bytes: 0,
+      text: `Processing external knowledge node (2025-2026): ${url}`,
+      protected: false
+    };
+
+    setDocs(prev => [placeholder, ...prev]);
+    addAuditLog('URL_INGEST_START', 'WEB_NODE', docId, { url });
+
+    try {
+      const result = await aiService.ingestUrl(url);
+      setDocs(prev => prev.map(d => d.id === docId ? {
+        ...d,
+        title: result.title || url,
+        status: 'ready',
+        text: result.fullText,
+        extractedData: {
+          documentType: "WEB_RESOURCE",
+          summary: result.summary,
+          entity: "Belgian Web Node (2025)"
+        }
+      } : d));
+      addAuditLog('URL_INGEST_SUCCESS', 'WEB_NODE', docId);
+    } catch (e) {
+      setDocs(prev => prev.map(d => d.id === docId ? { ...d, status: 'error', title: "Fetch Failed" } : d));
+    }
   };
 
   const archiveInteractionAsDoc = (text: string) => {
@@ -142,89 +214,30 @@ const App: React.FC = () => {
       protected: false
     };
     setDocs(prev => [newDoc, ...prev]);
-    addAuditLog('AUTO_ARCHIVE_INPUT', 'DOCUMENT', docId, { snippet: text.substring(0, 50) });
   };
 
   const handleTriggerOCR = (ids: string[]) => {
-    setDocs(prev => prev.map(d => 
-      ids.includes(d.id) ? { ...d, status: 'processing', ocrStatus: 'pending' } : d
-    ));
-    
-    addAuditLog('MANUAL_OCR_TRIGGER', 'DOCUMENT_BATCH', undefined, { 
-      count: ids.length, 
-      initiatedAt: new Date().toISOString() 
-    });
-
+    setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, status: 'processing', ocrStatus: 'pending' } : d));
     setTimeout(() => {
-      setDocs(prev => prev.map(d => 
-        ids.includes(d.id) ? { 
-          ...d, 
-          status: 'ready', 
-          ocrStatus: 'completed', 
-          text: `On-demand OCR sequence completed for ${d.title}. Internal audit trace: ${Math.random().toString(36).substring(2, 10).toUpperCase()}. Intelligence node verified: ${serverMode.toUpperCase()}` 
-        } : d
-      ));
-    }, 2500);
+      setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, status: 'ready', ocrStatus: 'completed' } : d));
+    }, 2000);
   };
 
-  const handleDelete = (id: string) => {
-    const doc = docs.find(d => d.id === id);
-    if (doc?.protected) return;
-    setDocs(prev => prev.filter(d => d.id !== id));
-    addAuditLog('MANUAL_DELETE', 'DOCUMENT', id);
-  };
-
-  const handleBulkDelete = (ids: string[]) => {
-    const targetDocs = docs.filter(d => ids.includes(d.id));
-    const deleteableIds = targetDocs.filter(d => !d.protected).map(d => d.id);
-    setDocs(prev => prev.filter(d => !deleteableIds.includes(d.id)));
-    addAuditLog('BULK_DELETE', 'DOCUMENT_BATCH', undefined, { count: deleteableIds.length });
-  };
-
-  const handleToggleProtect = (ids: string[], isProtected: boolean) => {
-    setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, protected: isProtected } : d));
-    addAuditLog(isProtected ? 'SET_PROTECTION' : 'RELEASE_PROTECTION', 'DOCUMENT_BATCH', undefined, { count: ids.length });
-  };
+  const handleDelete = (id: string) => setDocs(prev => prev.filter(d => d.id !== id || d.protected));
+  const handleBulkDelete = (ids: string[]) => setDocs(prev => prev.filter(d => !ids.includes(d.id) || d.protected));
+  const handleToggleProtect = (ids: string[], isP: boolean) => setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, protected: isP } : d));
 
   const handlePurge = (filter: any) => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - filter.olderThanDays);
-    const toDelete = docs.filter(d => new Date(d.createdAt) < cutoff && !d.protected);
-    setDocs(prev => prev.filter(d => !toDelete.some(td => td.id === d.id)));
-    addAuditLog('COMPLIANCE_PURGE', 'WORKSPACE_CLEANUP', undefined, { filter, deletedCount: toDelete.length });
-    alert(`Administrative Purge Complete: ${toDelete.length} records erased.`);
+    setDocs(prev => prev.filter(d => new Date(d.createdAt) >= cutoff || d.protected));
+    alert("Purge complete for the 2025 compliance record.");
   };
 
   if (!isLoaded) return null;
 
-  const localInstallScript = `#!/bin/bash
-# Eburon RAG Local Infrastructure Setup
-echo "Initializing Eburon Local environment..."
-
-# 1. Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 2. Pull Eburon RAG OCR Model
-echo "Pulling Eburon-Pro Vision models..."
-ollama pull eburon-pro/vision
-
-# 3. Start Local Inference Engine
-echo "Starting Eburon Vision..."
-ollama run eburon-pro/vision`;
-
   return (
     <div className="flex bg-slate-50 min-h-screen font-sans overflow-x-hidden text-slate-900 selection:bg-blue-100 selection:text-blue-900">
-      <button 
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="md:hidden fixed top-4 right-4 z-[60] bg-slate-900 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-transform active:scale-90"
-      >
-        <i className={`fa-solid ${isSidebarOpen ? 'fa-xmark' : 'fa-bars-staggered'}`}></i>
-      </button>
-
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[55] md:hidden" onClick={() => setIsSidebarOpen(false)} />
-      )}
-
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={(tab) => { setActiveTab(tab); setIsSidebarOpen(false); }} 
@@ -237,10 +250,12 @@ ollama run eburon-pro/vision`;
             <DocsView 
               documents={docs} 
               onUpload={handleUpload} 
+              onUrlIngest={handleUrlIngest}
               onDelete={handleDelete}
               onBulkDelete={handleBulkDelete}
               onToggleProtect={handleToggleProtect}
               onTriggerOCR={handleTriggerOCR}
+              onCameraCapture={handleCameraCapture}
             />
           )}
           
@@ -253,169 +268,29 @@ ollama run eburon-pro/vision`;
             />
           )}
           
-          {activeTab === 'purge' && (
-            <PurgeView documents={docs} onExecutePurge={handlePurge} />
-          )}
-
+          {activeTab === 'purge' && <PurgeView documents={docs} onExecutePurge={handlePurge} />}
           {activeTab === 'audit' && (
-            <div className="p-4 md:p-6 max-w-6xl mx-auto">
-              <header className="mb-10">
-                <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight uppercase border-b-4 border-slate-900 pb-2 inline-block">Administrative Audit Logs</h1>
-                <p className="text-slate-500 mt-3 text-sm font-medium">Official forensic record for SPF/FPS compliance monitoring and APD/GBA disclosure.</p>
-              </header>
-              <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/50 overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[800px]">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+            <div className="p-6 max-w-6xl mx-auto">
+              <h1 className="text-2xl font-black border-b-4 border-slate-900 pb-2 inline-block uppercase">2025-2026 Audit Record</h1>
+              <div className="bg-white mt-8 rounded-3xl border border-slate-200 overflow-hidden shadow-xl">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 border-b">
                     <tr>
-                      <th className="px-6 py-5 font-black text-slate-400 text-[10px] uppercase tracking-widest">Action Event</th>
-                      <th className="px-6 py-5 font-black text-slate-400 text-[10px] uppercase tracking-widest">Authority ID</th>
-                      <th className="px-6 py-5 font-black text-slate-400 text-[10px] uppercase tracking-widest">Resource Type</th>
-                      <th className="px-6 py-5 font-black text-slate-400 text-[10px] uppercase tracking-widest text-right">Verification Metadata</th>
+                      <th className="px-6 py-4 font-black uppercase text-[10px]">Action</th>
+                      <th className="px-6 py-4 font-black uppercase text-[10px]">Resource</th>
+                      <th className="px-6 py-4 font-black uppercase text-[10px]">Time</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {auditLogs.length === 0 ? (
-                       <tr>
-                         <td colSpan={4} className="px-6 py-20 text-center text-slate-400 italic">No administrative events recorded in this session.</td>
-                       </tr>
-                    ) : auditLogs.map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-5 font-black text-blue-900 text-xs">{log.action}</td>
-                        <td className="px-6 py-5 text-slate-400 font-mono text-[10px]">{log.actorId}</td>
-                        <td className="px-6 py-5">
-                          <span className="bg-slate-100 px-2 py-0.5 rounded-lg text-[10px] font-black text-slate-600 border border-slate-200">
-                            {log.targetType}
-                          </span>
-                        </td>
-                        <td className="px-6 py-5 text-right text-[10px] text-slate-400 font-mono">
-                          {JSON.stringify(log.metadata || {})}
-                        </td>
+                  <tbody className="divide-y">
+                    {auditLogs.map(log => (
+                      <tr key={log.id}>
+                        <td className="px-6 py-4 font-bold text-blue-900">{log.action}</td>
+                        <td className="px-6 py-4 text-slate-500 font-mono text-[10px]">{log.targetType}</td>
+                        <td className="px-6 py-4 text-slate-400 text-xs">{new Date(log.createdAt).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-8">
-              <header className="mb-10">
-                <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight uppercase border-b-4 border-slate-900 pb-2 inline-block">System Infrastructure</h1>
-                <p className="text-slate-500 mt-3 text-sm font-medium">Configure secure processing nodes and institutional jurisdictional settings.</p>
-              </header>
-
-              <div className="grid md:grid-cols-1 gap-8">
-                {/* Server Settings */}
-                <section className="bg-white rounded-3xl border border-slate-200 p-6 md:p-10 space-y-8 shadow-xl shadow-slate-200/50">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 text-xl shadow-inner">
-                        <i className="fa-solid fa-microchip"></i>
-                      </div>
-                      <div>
-                        <h3 className="font-black text-slate-900 uppercase text-sm tracking-tight">Intelligence Node Selection</h3>
-                        <p className="text-xs text-slate-400 font-medium">Select compliant compute environment for OCR/RAG operations.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <button 
-                      onClick={() => setServerMode('cloud')}
-                      className={`p-6 rounded-3xl border-2 text-left transition-all relative group ${serverMode === 'cloud' ? 'border-blue-600 bg-blue-50/50 ring-4 ring-blue-50' : 'border-slate-100 hover:border-slate-300'}`}
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${serverMode === 'cloud' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'}`}>
-                          <i className="fa-solid fa-cloud-bolt"></i>
-                        </div>
-                        {serverMode === 'cloud' && <i className="fa-solid fa-circle-check text-blue-600 text-xl"></i>}
-                      </div>
-                      <p className="font-black text-slate-900 uppercase text-xs tracking-wider">Sovereign Cloud Node</p>
-                      <p className="text-[11px] text-slate-500 leading-relaxed mt-2 font-medium">Secured FPS environment for high-throughput administrative processing.</p>
-                    </button>
-
-                    <button 
-                      onClick={() => setServerMode('local')}
-                      className={`p-6 rounded-3xl border-2 text-left transition-all relative group ${serverMode === 'local' ? 'border-blue-600 bg-blue-50/50 ring-4 ring-blue-50' : 'border-slate-100 hover:border-slate-300'}`}
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${serverMode === 'local' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'}`}>
-                          <i className="fa-solid fa-shield-halved"></i>
-                        </div>
-                        {serverMode === 'local' && <i className="fa-solid fa-circle-check text-blue-600 text-xl"></i>}
-                      </div>
-                      <p className="font-black text-slate-900 uppercase text-xs tracking-wider">Local Private Node</p>
-                      <p className="text-[11px] text-slate-500 leading-relaxed mt-2 font-medium">Air-gapped on-premise infrastructure. No external traffic footprint.</p>
-                    </button>
-                  </div>
-
-                  {serverMode === 'local' && (
-                    <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="bg-slate-900 rounded-3xl p-8 relative overflow-hidden group">
-                        <div className="relative z-10">
-                          <div className="flex items-center gap-3 mb-6">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-900 shadow-lg shadow-emerald-500/20">
-                              <i className="fa-solid fa-terminal text-xs"></i>
-                            </div>
-                            <h4 className="text-white font-black uppercase text-xs tracking-widest">Local Provisioning Sequence</h4>
-                          </div>
-                          
-                          <p className="text-slate-400 text-xs mb-6 leading-relaxed">
-                            To activate local processing, execute the provisioning script on your secure workstation. This will install the local intelligence layer and pull the necessary Vision models.
-                          </p>
-
-                          <div className="relative">
-                            <pre className="bg-black/50 text-emerald-400 p-6 rounded-2xl font-mono text-[11px] overflow-x-auto leading-relaxed border border-white/5 scrollbar-hide">
-                              {localInstallScript}
-                            </pre>
-                            <button 
-                              onClick={() => {
-                                navigator.clipboard.writeText(localInstallScript);
-                                alert('Compliance script copied to secure clipboard.');
-                              }}
-                              className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black transition-all backdrop-blur-md active:scale-95"
-                            >
-                              Copy Command
-                            </button>
-                          </div>
-                        </div>
-                        <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-1000"></div>
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                <section className="bg-white rounded-3xl border border-slate-200 p-6 md:p-10 space-y-8 shadow-xl shadow-slate-200/50">
-                  <div className="flex items-center gap-2 mb-6 border-l-4 border-yellow-400 pl-4">
-                     <h3 className="font-black text-slate-900 uppercase text-sm tracking-tight">Officer Registry Profile</h3>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3">Institutional Service Entity</label>
-                      <input type="text" readOnly defaultValue="FPS BOSA - DIGITAL TRANSFORMATION" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-600 font-bold text-sm focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3">Administrative Jurisdiction</label>
-                      <select className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500/20 appearance-none">
-                         <option>BE-FEDERAL (Kingdom level)</option>
-                         <option>BE-VLG (Flanders)</option>
-                         <option>BE-WAL (Wallonia)</option>
-                         <option>BE-BCR (Brussels)</option>
-                      </select>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="pt-4">
-                  <div className="p-6 bg-red-50 border border-red-100 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
-                    <div className="text-center md:text-left">
-                      <p className="text-sm font-black text-red-900 uppercase tracking-tight">Security Decommissioning</p>
-                      <p className="text-[11px] text-red-800 opacity-70 mt-1 font-medium italic">Complete institutional wipe. This action initiates a secure erasure of all metadata and audit logs from this node.</p>
-                    </div>
-                    <button className="bg-red-600 text-white px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-900/20 active:scale-95 whitespace-nowrap">Node Wipe</button>
-                  </div>
-                </section>
               </div>
             </div>
           )}

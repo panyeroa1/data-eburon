@@ -1,53 +1,83 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Document } from '../types';
 import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from '../constants';
 
 interface DocsViewProps {
   documents: Document[];
   onUpload: (files: FileList) => void;
+  onUrlIngest: (url: string) => void;
   onDelete: (id: string) => void;
   onBulkDelete: (ids: string[]) => void;
   onToggleProtect: (ids: string[], isProtected: boolean) => void;
   onTriggerOCR: (ids: string[]) => void;
+  onCameraCapture: (base64: string) => void;
 }
 
 const DocsView: React.FC<DocsViewProps> = ({ 
   documents, 
   onUpload, 
+  onUrlIngest,
   onDelete, 
   onBulkDelete, 
   onToggleProtect,
-  onTriggerOCR
+  onTriggerOCR,
+  onCameraCapture
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [urlInput, setUrlInput] = useState('');
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const startCamera = async () => {
+    setIsCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access denied", err);
+      alert("Please allow camera access to scan documents.");
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL('image/jpeg').split(',')[1];
+        onCameraCapture(base64);
+        stopCamera();
+      }
+    }
+  };
 
   const validateAndUpload = (files: FileList) => {
-    const invalidFiles: string[] = [];
-    const oversizedFiles: string[] = [];
-    
-    Array.from(files).forEach(f => {
-      if (!ALLOWED_MIME_TYPES.includes(f.type)) {
-        invalidFiles.push(f.name);
-      }
-      if (f.size > MAX_FILE_SIZE) {
-        oversizedFiles.push(f.name);
-      }
-    });
-
-    if (invalidFiles.length > 0 || oversizedFiles.length > 0) {
-      let message = "Compliance Warning:\n";
-      if (invalidFiles.length > 0) message += `- Unsupported formats: ${invalidFiles.join(', ')}\n`;
-      if (oversizedFiles.length > 0) message += `- Exceeds 15MB limit: ${oversizedFiles.join(', ')}\n`;
-      alert(message);
-    }
-
     onUpload(files);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) validateAndUpload(e.target.files);
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (urlInput.trim()) {
+      onUrlIngest(urlInput.trim());
+      setUrlInput('');
+    }
   };
 
   const toggleSelectAll = () => {
@@ -60,250 +90,170 @@ const DocsView: React.FC<DocsViewProps> = ({
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
+    if (next.has(id)) next.delete(id); else next.add(id);
     setSelectedIds(next);
   };
 
-  const handleBulkDeleteAction = () => {
-    if (confirm(`Are you sure you want to delete ${selectedIds.size} documents?`)) {
-      onBulkDelete(Array.from(selectedIds));
-      setSelectedIds(new Set());
-    }
-  };
-
-  const handleBulkProtectAction = (isProtected: boolean) => {
-    onToggleProtect(Array.from(selectedIds), isProtected);
-    setSelectedIds(new Set());
-  };
-
-  const handleBulkOCRAction = () => {
-    onTriggerOCR(Array.from(selectedIds));
-    setSelectedIds(new Set());
-  };
-
-  const getFileIcon = (mimeType: string) => {
+  const getFileIcon = (mimeType: string, sourceType: string) => {
+    if (sourceType === 'url') return 'fa-globe text-blue-500';
     if (mimeType.includes('pdf')) return 'fa-file-pdf text-red-500';
-    if (mimeType.includes('word') || mimeType.includes('msword')) return 'fa-file-word text-blue-600';
-    if (mimeType.includes('csv') || mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'fa-file-csv text-emerald-600';
+    if (mimeType.includes('word')) return 'fa-file-word text-blue-600';
     if (mimeType.includes('image')) return 'fa-file-image text-purple-500';
-    if (mimeType.includes('text')) return 'fa-file-lines text-slate-500';
     return 'fa-file text-slate-400';
   };
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6 md:space-y-8">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight uppercase">Governance Corpus</h1>
-          <p className="text-slate-500 mt-1 text-sm font-medium">Manage institutional data assets and track automated OCR/Index status.</p>
+      <header className="flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight uppercase">Governance Corpus</h1>
+            <p className="text-slate-500 mt-1 text-sm font-medium">Sovereign repository: Ingest paperwork, web nodes, or live captures.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <form onSubmit={handleUrlSubmit} className="flex flex-1">
+              <input 
+                type="url"
+                placeholder="Ingest BE-Gov URL..."
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                className="flex-1 bg-white border border-slate-200 rounded-l-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500/20 outline-none"
+              />
+              <button type="submit" className="bg-slate-900 text-white px-4 rounded-r-xl border border-slate-900 hover:bg-black transition-all">
+                <i className="fa-solid fa-cloud-arrow-down"></i>
+              </button>
+            </form>
+            <div className="flex gap-2 shrink-0">
+               <button 
+                onClick={startCamera}
+                className="bg-slate-800 hover:bg-slate-900 text-white w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-lg active:scale-95"
+                title="Scan Document with Camera"
+              >
+                <i className="fa-solid fa-camera"></i>
+              </button>
+              <label className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-95">
+                <i className="fa-solid fa-file-export"></i>
+                <span>Upload</span>
+                <input type="file" multiple className="hidden" onChange={(e) => e.target.files && validateAndUpload(e.target.files)} />
+              </label>
+            </div>
+          </div>
         </div>
-        <label className="w-full md:w-auto bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 active:scale-95">
-          <i className="fa-solid fa-cloud-arrow-up"></i>
-          <span>Ingest Data</span>
-          <input 
-            type="file" 
-            multiple 
-            className="hidden" 
-            onChange={handleFileSelect} 
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*"
-          />
-        </label>
       </header>
 
-      {/* Bulk Actions Bar */}
-      {selectedIds.size > 0 && (
-        <div className="bg-slate-900 text-white p-3 md:p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl animate-in fade-in slide-in-from-top-2 duration-300 border border-slate-700">
-          <div className="flex items-center gap-4 w-full md:w-auto">
-            <button 
-              onClick={() => setSelectedIds(new Set())}
-              className="text-slate-400 hover:text-white transition-colors"
-            >
-              <i className="fa-solid fa-xmark text-lg"></i>
-            </button>
-            <span className="font-bold text-sm">
-              {selectedIds.size} items selected
-            </span>
+      {/* Camera Overlay */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-4">
+          <div className="relative max-w-2xl w-full aspect-[3/4] bg-slate-800 rounded-3xl overflow-hidden border-4 border-slate-700 shadow-2xl">
+            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+            <div className="absolute inset-x-8 inset-y-12 border-2 border-white/30 border-dashed rounded-lg pointer-events-none">
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-yellow-400"></div>
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-yellow-400"></div>
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-yellow-400"></div>
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-yellow-400"></div>
+            </div>
+            <div className="absolute bottom-8 inset-x-0 flex justify-center gap-8 items-center">
+              <button onClick={stopCamera} className="w-12 h-12 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center">
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+              <button onClick={capturePhoto} className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-xl active:scale-90 transition-transform">
+                <div className="w-16 h-16 rounded-full border-4 border-slate-900"></div>
+              </button>
+              <div className="w-12"></div>
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
           </div>
-          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-            <button 
-              onClick={handleBulkOCRAction}
-              className="bg-blue-700 hover:bg-blue-600 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20"
-            >
-              <i className="fa-solid fa-wand-magic-sparkles"></i>
-              Trigger OCR
-            </button>
-            <div className="w-px h-6 bg-slate-700 mx-1 hidden md:block"></div>
-            <button 
-              onClick={() => handleBulkProtectAction(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"
-            >
-              <i className="fa-solid fa-lock text-yellow-500"></i>
-              Legal Hold
-            </button>
-            <button 
-              onClick={() => handleBulkProtectAction(false)}
-              className="bg-slate-800 hover:bg-slate-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 border border-slate-700"
-            >
-              <i className="fa-solid fa-lock-open"></i>
-              Release
-            </button>
-            <div className="w-px h-6 bg-slate-700 mx-1 hidden md:block"></div>
-            <button 
-              onClick={handleBulkDeleteAction}
-              className="bg-red-600 hover:bg-red-700 text-[10px] md:text-xs px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg shadow-red-900/20"
-            >
-              <i className="fa-solid fa-trash-can"></i>
-              Purge
-            </button>
-          </div>
+          <p className="text-white/60 font-black uppercase text-[10px] tracking-[0.2em] mt-6">Position document within frame • BE-GOV Sovereign Scanner</p>
         </div>
       )}
 
-      {/* Upload Dropzone */}
-      <div 
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => { 
-          e.preventDefault(); 
-          setIsDragging(false); 
-          if (e.dataTransfer.files) validateAndUpload(e.dataTransfer.files); 
-        }}
-        className={`border-2 border-dashed rounded-3xl p-6 md:p-12 text-center transition-all duration-300 relative overflow-hidden ${
-          isDragging ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'
-        }`}
-      >
-        <div className="relative z-10">
-          <div className="mx-auto w-16 h-16 md:w-20 md:h-20 bg-blue-100/50 rounded-3xl flex items-center justify-center mb-6 ring-8 ring-blue-50">
-            <i className="fa-solid fa-folder-plus text-blue-600 text-2xl md:text-3xl"></i>
-          </div>
-          <h3 className="text-lg md:text-xl font-bold text-slate-800 mb-2">Multi-Format Ingestion</h3>
-          <p className="text-slate-500 text-xs md:text-sm mb-6 max-w-md mx-auto">
-            Drop Case Files, Administrative Records, or Media Assets. Support for PDF, Office, CSV, and Images with automatic OCR.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3 text-[10px] md:text-xs font-bold">
-            <span className="bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 border border-slate-200">PDF</span>
-            <span className="bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 border border-slate-200">DOCX</span>
-            <span className="bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 border border-slate-200">CSV/XLS</span>
-            <span className="bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 border border-slate-200">MEDIA</span>
-            <span className="bg-slate-100 px-3 py-1.5 rounded-full text-slate-600 border border-slate-200">TEXT</span>
-          </div>
+      {/* Bulk Actions */}
+      {selectedIds.size > 0 && (
+        <div className="bg-slate-900 text-white p-3 rounded-2xl flex items-center justify-between shadow-xl border border-slate-700">
+          <span className="font-bold text-sm px-4">{selectedIds.size} nodes selected</span>
+          <button onClick={() => onBulkDelete(Array.from(selectedIds))} className="bg-red-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition-all mr-2">Purge Selected</button>
         </div>
-        {isDragging && <div className="absolute inset-0 bg-blue-600/5 animate-pulse"></div>}
+      )}
+
+      {/* Grid Status */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Knowledge Nodes</p>
+            <p className="text-2xl font-black text-slate-900">{documents.length}</p>
+         </div>
+         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Web Sources</p>
+            <p className="text-2xl font-black text-blue-600">{documents.filter(d => d.sourceType === 'url').length}</p>
+         </div>
       </div>
 
-      {/* Docs List */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[850px]">
-            <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] md:text-xs backdrop-blur-sm">
+          <table className="w-full text-left min-w-[950px]">
+            <thead className="bg-slate-50 border-b text-[10px] uppercase font-black">
               <tr>
-                <th className="px-4 md:px-6 py-5 w-12 text-center">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedIds.size === documents.length && documents.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-5 h-5 rounded-lg border-slate-300 text-blue-700 focus:ring-blue-600 focus:ring-offset-0"
-                  />
+                <th className="px-6 py-4 w-12 text-center">
+                  <input type="checkbox" checked={selectedIds.size === documents.length} onChange={toggleSelectAll} className="w-4 h-4" />
                 </th>
-                <th className="px-4 md:px-6 py-5 font-black text-slate-400 uppercase tracking-widest">Administrative Object</th>
-                <th className="px-4 md:px-6 py-5 font-black text-slate-400 uppercase tracking-widest">Compliance Status</th>
-                <th className="px-4 md:px-6 py-5 font-black text-slate-400 uppercase tracking-widest">OCR Index</th>
-                <th className="px-4 md:px-6 py-5 font-black text-slate-400 uppercase tracking-widest">Registry Date</th>
-                <th className="px-4 md:px-6 py-5 font-black text-slate-400 uppercase tracking-widest text-right">Ops</th>
+                <th className="px-6 py-4">Sovereign Asset</th>
+                <th className="px-6 py-4">Data Metadata</th>
+                <th className="px-6 py-4">Lifecycle Status</th>
+                <th className="px-6 py-4 text-right">Ops</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
-              {documents.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-24 text-center">
-                    <div className="max-w-xs mx-auto opacity-30 grayscale">
-                       <i className="fa-solid fa-box-open text-6xl mb-4 block"></i>
-                       <p className="font-bold text-slate-900 uppercase tracking-widest text-xs">Repository Exhausted</p>
-                       <p className="text-xs mt-1">No active documents detected in this governance node.</p>
+            <tbody className="divide-y text-sm">
+              {documents.map((doc) => (
+                <tr key={doc.id} className="hover:bg-slate-50 transition-all">
+                  <td className="px-6 py-4 text-center">
+                    <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} className="w-4 h-4" />
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 border flex items-center justify-center text-lg">
+                        <i className={`fa-solid ${getFileIcon(doc.mimeType, doc.sourceType)}`}></i>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-800 truncate max-w-[300px]">{doc.title}</p>
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{doc.sourceType} Node</p>
+                      </div>
                     </div>
                   </td>
-                </tr>
-              ) : (
-                documents.map((doc) => (
-                  <tr key={doc.id} className={`hover:bg-blue-50/30 transition-all group ${selectedIds.has(doc.id) ? 'bg-blue-50/70' : ''}`}>
-                    <td className="px-4 md:px-6 py-5 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedIds.has(doc.id)}
-                        onChange={() => toggleSelect(doc.id)}
-                        className="w-5 h-5 rounded-lg border-slate-300 text-blue-700 focus:ring-blue-600 focus:ring-offset-0"
-                      />
-                    </td>
-                    <td className="px-4 md:px-6 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-xl shadow-sm group-hover:shadow transition-all shrink-0">
-                          <i className={`fa-solid ${getFileIcon(doc.mimeType)}`}></i>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <p className="font-bold text-slate-800 text-xs md:text-sm truncate">{doc.title}</p>
-                            {doc.protected && (
-                              <span className="bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-yellow-200 flex items-center gap-1 shrink-0 shadow-sm animate-pulse">
-                                <i className="fa-solid fa-shield-halved text-[8px]"></i>
-                                Hold
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase font-bold tracking-tight">
-                            <span>{(doc.bytes / 1024).toFixed(0)} KB</span>
-                            <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                            <span>{doc.sourceType}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 md:px-6 py-5">
-                      <span className={`px-3 py-1 rounded-full text-[9px] md:text-[10px] font-black tracking-widest ${
-                        doc.status === 'ready' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 
-                        doc.status === 'processing' ? 'bg-blue-100 text-blue-800 animate-pulse border border-blue-200' : 
-                        doc.status === 'error' ? 'bg-red-100 text-red-800 border border-red-200' :
-                        'bg-slate-100 text-slate-500 border border-slate-200'
-                      }`}>
-                        {doc.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-4 md:px-6 py-5">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          doc.ocrStatus === 'completed' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' :
-                          doc.ocrStatus === 'pending' ? 'bg-blue-500 animate-pulse' :
-                          doc.ocrStatus === 'failed' ? 'bg-red-500' : 'bg-slate-300'
-                        }`}></div>
-                        <span className="text-[10px] md:text-xs text-slate-600 font-bold tracking-tight">
-                          {doc.ocrStatus.replace('_', ' ').toUpperCase()}
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1.5 items-start">
+                      {doc.extractedData?.documentType && (
+                        <span className="bg-slate-900 text-yellow-400 text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border border-slate-700 shadow-sm flex items-center gap-1.5 mb-1 group-hover:scale-105 transition-transform">
+                          <i className="fa-solid fa-file-signature text-[8px]"></i>
+                          {doc.extractedData.documentType}
                         </span>
+                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {doc.extractedData?.niss && (
+                          <span className="bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase px-2 py-0.5 rounded border border-emerald-100">
+                            NISS: {doc.extractedData.niss}
+                          </span>
+                        )}
+                        {doc.extractedData?.date && (
+                          <span className="bg-slate-50 text-slate-500 text-[9px] font-black uppercase px-2 py-0.5 rounded border border-slate-100">
+                            {doc.extractedData.date}
+                          </span>
+                        )}
                       </div>
-                    </td>
-                    <td className="px-4 md:px-6 py-5">
-                       <div className="text-xs text-slate-500 font-medium">
-                          {new Date(doc.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                       </div>
-                    </td>
-                    <td className="px-4 md:px-6 py-5 text-right">
-                      <div className="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all transform md:group-hover:translate-x-0 md:translate-x-2">
-                        <button 
-                          onClick={() => onDelete(doc.id)}
-                          disabled={doc.protected}
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                            doc.protected ? 'text-slate-200 bg-slate-50 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50 hover:shadow-sm'
-                          }`}
-                        >
-                          <i className="fa-solid fa-trash-can"></i>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                      doc.status === 'ready' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800 animate-pulse'
+                    }`}>
+                      {doc.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button onClick={() => onDelete(doc.id)} disabled={doc.protected} className="text-slate-300 hover:text-red-600 disabled:opacity-30 p-2">
+                       <i className="fa-solid fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

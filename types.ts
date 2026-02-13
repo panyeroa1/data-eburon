@@ -16,12 +16,20 @@ export interface Document {
   title: string;
   sourceType: SourceType;
   status: DocStatus;
-  ocrStatus: OCRStatus; // Added OCR specific status field
+  ocrStatus: OCRStatus;
   createdAt: string;
   mimeType: string;
   bytes: number;
-  text?: string; // Extracted OCR text
-  protected?: boolean; // New: Legal hold / Protected status
+  text?: string;
+  protected?: boolean;
+  extractedData?: {
+    documentType?: string;
+    date?: string;
+    niss?: string;
+    entity?: string;
+    summary?: string;
+    [key: string]: any;
+  };
 }
 
 export interface Chunk {
